@@ -1,0 +1,39 @@
+services:
+
+  # ── FastAPI Bridge ──────────────────────────────────────────────────────────
+  bridge:
+    build: ./bridge
+    restart: unless-stopped
+    ports:
+      - "${BRIDGE_PORT:-8080}:8080"
+    volumes:
+      - chat_data:/data
+    environment:
+      FREETOKEN_BASE_URL: ${FREETOKEN_BASE_URL:-http://host.docker.internal:8000}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-120}
+      MAX_CONTEXT_TOKENS: ${MAX_CONTEXT_TOKENS:-8192}
+      RESPONSE_RESERVE: ${RESPONSE_RESERVE:-1024}
+      DB_PATH: /data/chat.db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux host resolution
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Next.js Frontend ────────────────────────────────────────────────────────
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      NEXT_PUBLIC_BRIDGE_URL: http://localhost:${BRIDGE_PORT:-8080}
+    depends_on:
+      bridge:
+        condition: service_healthy
+
+volumes:
+  chat_data:   # persists SQLite database across container restarts
