@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # 1. MoE Inference Engine (FreeToken)
+  freetoken:
+    image: flashml/freetoken:latest
+    container_name: freetoken-engine
+    ports:
+      - "11434:11434"
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+    # Enable NVIDIA GPU inside Docker
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - freetoken-cache:/root/.cache/freetoken
+    command: freetoken serve --host 0.0.0.0 --port 11434
+    restart: unless-stopped
+
+  # 2. Application API Gateway (FastAPI)
+  backend:
+    build: ./backend
+    container_name: chat-api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - FREETOKEN_URL=http://freetoken:11434/v1
+      - ALTERNATIVE_UPSTREAM_URL=https://api.openai.com/v1
+      - UPSTREAM_API_KEY=${UPSTREAM_API_KEY}
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - freetoken
+    restart: always
+
+  # 3. Web Client (Next.js)
+  frontend:
+    build: ./frontend
+    container_name: chat-web-ui
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  freetoken-cache:
